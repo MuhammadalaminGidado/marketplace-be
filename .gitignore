@@ -1,0 +1,64 @@
+```gitignore
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go build output
+bin/
+dist/
+build/
+coverage.out
+cover.out
+*.coverprofile
+
+# Go workspace
+go.work.sum
+
+# Vendor (uncomment if you do NOT want to commit dependencies)
+# vendor/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Temporary files
+tmp/
+temp/
+
+# Generated files (uncomment if applicable)
+# *.pb.go
+# *.gen.go
+
+# Air (live reload)
+.air/
+
+# Delve debugger
+__debug_bin
+
+# Test cache
+*.test
+
+# Local configuration
+*.local
+```
