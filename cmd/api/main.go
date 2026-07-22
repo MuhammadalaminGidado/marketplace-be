@@ -8,11 +8,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
-	"example/api/handlers"
-	"example/api/internal/auth"
 	"example/api/internal/config"
 	db "example/api/internal/database"
-	"example/api/middleware"
+	"example/api/internal/handlers"
+	"example/api/internal/middleware"
+	"example/api/internal/repositories"
+	"example/api/internal/services"
+	authservice "example/api/internal/services/auth"
 )
 
 func main() {
@@ -20,7 +22,7 @@ func main() {
 		log.Println(".env not found, falling back to environment")
 	}
 
-	cfg := config.Load() // centralise all os.Getenv calls here
+	cfg := config.Load()
 
 	logger, err := middleware.NewLogger(cfg.Env)
 	if err != nil {
@@ -39,12 +41,34 @@ func main() {
 		log.Fatalf("failed to initialise database: %v", err)
 	}
 
-	authStore := auth.NewStore(database)
+	// Repositories
+	entityRepo := repositories.NewEntityRepository(database)
+	sessionRepo := repositories.NewSessionRepository(database)
 
-	h := handlers.NewHandler(database, authStore, logger, 24*time.Hour)
+	// Services
+	authService := authservice.NewService(
+		database,
+		entityRepo,
+		sessionRepo,
+		logger,
+		24*time.Hour,
+		5,
+	)
+
+	appServices := &services.Services{
+		Auth: authService,
+	}
+
+	// Temporary until middleware is migrated
+
+	// Handlers
+	h := handlers.NewHandler(
+		appServices,
+		logger,
+	)
 
 	router := gin.New()
-	router.Use(gin.Recovery()) // be explicit
+	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger, cfg.Env))
 	router.Use(cors.New(middleware.GetCORSConfig()))
 
@@ -52,18 +76,17 @@ func main() {
 
 	api := router.Group("/api")
 	{
-
 		api.POST("/login", h.Login)
 		api.POST("/signup", h.Signup)
-		api.POST("/otp/request", nil)
-		api.POST("/otp/verify", nil)
-		api.POST("/password/reset", nil)
+		api.POST("/otp/request", h.NotImplemented)
+		api.POST("/otp/verify", h.NotImplemented)
+		api.POST("/password/reset", h.NotImplemented)
 
-		auth := api.Group("")
-		auth.Use(middleware.AuthMiddleware(authStore))
+		protected := api.Group("")
+		protected.Use(middleware.AuthMiddleware(authService), middleware.CSRFMiddleware())
 		{
-			auth.GET("/me", h.GetCurrentUser)
-			auth.POST("/logout", h.Logout)
+			protected.GET("/me", h.GetCurrentUser)
+			protected.POST("/logout", h.Logout)
 		}
 	}
 

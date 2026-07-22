@@ -16,7 +16,7 @@ func GetCORSConfig() cors.Config {
 }
 func SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "sessionToken",
+		Name:     "session_token",
 		Value:    token,
 		Path:     "/",
 		MaxAge:   86400,

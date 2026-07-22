@@ -22,7 +22,8 @@ type Config struct {
 
 func Init(cfg Config) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{
-		Logger: logger.Default.LogMode(logLevelFor(cfg.Env)),
+		Logger:         logger.Default.LogMode(logLevelFor(cfg.Env)),
+		TranslateError: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)

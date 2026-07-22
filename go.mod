@@ -5,6 +5,7 @@ go 1.25.0
 require github.com/golang-migrate/migrate/v4 v4.19.1
 
 require (
+	github.com/alexedwards/scs/v2 v2.9.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
