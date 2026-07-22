@@ -48,6 +48,33 @@ func main() {
 	}
 	log.Println("✅ PostgreSQL connected successfully")
 
+	// ============================================
+	// RUN MIGRATIONS CONDITIONALLY
+	// ============================================
+	// Get the underlying sql.DB for migrations
+	sqlDB, err := database.DB()
+	if err != nil {
+		log.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	// Run migrations with conditional logic
+	// This will only run if:
+	// 1. RUN_MIGRATIONS=true (environment variable), OR
+	// 2. ENV=production or ENV=staging (if RUN_MIGRATIONS not set)
+	//
+	// The migration path is relative to the project root
+	if err := db.RunMigrations(sqlDB, "file://db/migrations", ""); err != nil {
+		// Handle migration errors based on environment
+		if cfg.Env == "production" {
+			log.Fatalf("❌ Migration failed in production: %v", err)
+		} else {
+			log.Printf("⚠️ Migration warning in %s: %v", cfg.Env, err)
+			// Continue in non-production environments
+		}
+	} else {
+		log.Println("✅ Migration check completed")
+	}
+
 	// Redis - handles both REDIS_URL and individual config
 	redisClient := redis.New(
 		os.Getenv("REDIS_ADDR"),

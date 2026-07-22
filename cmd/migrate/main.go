@@ -1,4 +1,3 @@
-// cmd/migrate/main.go
 package main
 
 import (
@@ -42,8 +41,27 @@ func main() {
 		log.Println(".env not found")
 	}
 
+	// Parse command line arguments
 	if len(os.Args) < 2 {
 		log.Fatal("usage: migrate <up|down|force> [version]")
+	}
+
+	// Set environment variables to force migrations
+	os.Setenv("RUN_MIGRATIONS", "true")
+
+	// Set direction from command line
+	if len(os.Args) >= 2 {
+		os.Setenv("MIGRATION_DIRECTION", os.Args[1])
+	}
+
+	// Set force version if provided
+	if len(os.Args) >= 3 && os.Args[1] == "force" {
+		os.Setenv("MIGRATION_FORCE_VERSION", os.Args[2])
+	}
+
+	// Set steps for down migration if provided
+	if len(os.Args) >= 3 && os.Args[1] == "down" {
+		os.Setenv("MIGRATION_STEPS", os.Args[2])
 	}
 
 	if err := createDBIfNotExists(os.Getenv("MAINTENANCE_DSN"), os.Getenv("DB_NAME")); err != nil {
@@ -66,7 +84,9 @@ func main() {
 		log.Fatalf("unwrap sql.DB: %v", err)
 	}
 
-	if err := db.RunMigrations(sqlDB, "file://db/migrations", os.Args[1], os.Args[2:]...); err != nil {
+	// Run migrations - this will use the environment variables we set above
+	// Pass empty string for direction to use environment variable
+	if err := db.RunMigrations(sqlDB, "file://db/migrations", ""); err != nil {
 		log.Fatalf("migration failed: %v", err)
 	}
 

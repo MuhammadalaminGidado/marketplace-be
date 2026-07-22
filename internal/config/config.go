@@ -1,4 +1,3 @@
-// internal/config/config.go
 package config
 
 import (
@@ -7,30 +6,32 @@ import (
 )
 
 type Config struct {
-	DBHost        string
-	DBPort        string
-	DBUser        string
-	DBPassword    string
-	DBName        string
-	DBSSLMode     string
-	RedisAddr     string
-	RedisPassword string
-	Env           string
-	ServerPort    string
+	DBHost         string
+	DBPort         string
+	DBUser         string
+	DBPassword     string
+	DBName         string
+	DBSSLMode      string
+	RedisAddr      string
+	RedisPassword  string
+	Env            string
+	ServerPort     string
+	MigrationsPath string // Add this for migrations
 }
 
 func Load() *Config {
 	cfg := &Config{
-		DBHost:        getEnv("DB_HOST", "localhost"),
-		DBPort:        getEnv("DB_PORT", "5432"),
-		DBUser:        getEnv("DB_USER", "postgres"),
-		DBPassword:    getEnv("DB_PASSWORD", ""),
-		DBName:        getEnv("DB_NAME", "postgres"),
-		DBSSLMode:     getEnv("DB_SSL_MODE", "disable"),
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		Env:           getEnv("ENV", "development"),
-		ServerPort:    getEnv("PORT", "8080"),
+		DBHost:         getEnv("DB_HOST", "localhost"),
+		DBPort:         getEnv("DB_PORT", "5432"),
+		DBUser:         getEnv("DB_USER", "postgres"),
+		DBPassword:     getEnv("DB_PASSWORD", ""),
+		DBName:         getEnv("DB_NAME", "postgres"),
+		DBSSLMode:      getEnv("DB_SSL_MODE", "disable"),
+		RedisAddr:      getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
+		Env:            getEnv("ENV", "development"),
+		ServerPort:     getEnv("PORT", "8080"),
+		MigrationsPath: getEnv("MIGRATIONS_PATH", "file://db/migrations"),
 	}
 
 	// Override with DATABASE_URL if provided (Render does this)
