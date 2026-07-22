@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: your-go-api
+    runtime: go
+    plan: free # or starter/professional
+    rootDir: ./ # Your main.go is in cmd/api, but we handle this with build command
+    buildCommand: |
+      go build -o app ./cmd/api
+    startCommand: ./app
+    healthCheckPath: /health
+    envVars:
+      # Environment
+      - key: ENV
+        value: production
+
+      # Database - Render will auto-set DATABASE_URL if you use their managed DB
+      # But we also support individual vars for flexibility
+      - key: DB_HOST
+        value: your-db-host # Only if not using Render managed DB
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        value: your-user
+      - key: DB_PASSWORD
+        value: your-password
+      - key: DB_NAME
+        value: your-database
+      - key: DB_SSL_MODE
+        value: require
+
+      # Redis
+      - key: REDIS_URL
+        sync: false # Set manually in dashboard
+
+      # Alternative: Individual Redis vars
+      - key: REDIS_ADDR
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false

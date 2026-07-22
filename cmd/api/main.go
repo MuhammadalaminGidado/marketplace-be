@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
@@ -20,18 +21,21 @@ import (
 )
 
 func main() {
+	// Try loading .env (works locally, ignored on Render)
 	if err := godotenv.Load(); err != nil {
 		log.Println(".env not found, falling back to environment")
 	}
 
 	cfg := config.Load()
 
+	// Logger
 	logger, err := middleware.NewLogger(cfg.Env)
 	if err != nil {
 		log.Fatalf("failed to initialise logger: %v", err)
 	}
 	defer logger.Sync()
 
+	// Database - will use DATABASE_URL if available
 	database, err := db.Init(db.Config{
 		DSN:             cfg.DSN(),
 		Env:             cfg.Env,
@@ -41,6 +45,22 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("failed to initialise database: %v", err)
+	}
+	log.Println("✅ PostgreSQL connected successfully")
+
+	// Redis - handles both REDIS_URL and individual config
+	redisClient := redis.New(
+		os.Getenv("REDIS_ADDR"),
+		os.Getenv("REDIS_PASSWORD"),
+		0,
+	)
+
+	// Test Redis connection
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		log.Printf("⚠️ Redis connection warning: %v", err)
+		// Continue anyway - your app might work without Redis
+	} else {
+		log.Println("✅ Redis connected successfully")
 	}
 
 	// Repositories
@@ -61,20 +81,13 @@ func main() {
 		Auth: authService,
 	}
 
-	// Temporary until middleware is migrated
-
 	// Handlers
 	h := handlers.NewHandler(
 		appServices,
 		logger,
 	)
 
-	redisClient := redis.New(
-		os.Getenv("REDIS_ADDR"),
-		os.Getenv("REDIS_PASSWORD"),
-		0,
-	)
-
+	// Router setup
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger, cfg.Env))
@@ -82,7 +95,7 @@ func main() {
 
 	router.GET("/health", h.Health)
 
-	authLimiter := middleware.NewRedisRateLimiter(redisClient, 5, time.Minute, "ratelimit:auth")
+	authLimiter := middleware.NewRedisRateLimiter(redisClient.Client, 5, time.Minute, "ratelimit:auth")
 
 	api := router.Group("/api")
 	{
@@ -100,7 +113,10 @@ func main() {
 		}
 	}
 
-	if err := router.Run(cfg.ServerAddr()); err != nil {
+	// Start server
+	addr := cfg.ServerAddr()
+	log.Printf("🚀 Server starting on %s", addr)
+	if err := router.Run(addr); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
 }

@@ -1,3 +1,4 @@
+// internal/config/config.go
 package config
 
 import (
@@ -6,42 +7,62 @@ import (
 )
 
 type Config struct {
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	DBSSLMode  string
-	Env        string
-	Port       string
+	DBHost        string
+	DBPort        string
+	DBUser        string
+	DBPassword    string
+	DBName        string
+	DBSSLMode     string
+	RedisAddr     string
+	RedisPassword string
+	Env           string
+	ServerPort    string
 }
 
-func Load() Config {
-	return Config{
-		DBHost:     GetEnv("DB_HOST", "localhost"),
-		DBPort:     GetEnv("DB_PORT", "5432"),
-		DBUser:     GetEnv("DB_USER", "postgres"),
-		DBPassword: GetEnv("DB_PASSWORD", "password"),
-		DBName:     GetEnv("DB_NAME", "mydb"),
-		DBSSLMode:  GetEnv("DB_SSLMODE", "disable"),
-		Env:        GetEnv("ENV", "development"),
-		Port:       GetEnv("PORT", "8080"),
+func Load() *Config {
+	cfg := &Config{
+		DBHost:        getEnv("DB_HOST", "localhost"),
+		DBPort:        getEnv("DB_PORT", "5432"),
+		DBUser:        getEnv("DB_USER", "postgres"),
+		DBPassword:    getEnv("DB_PASSWORD", ""),
+		DBName:        getEnv("DB_NAME", "postgres"),
+		DBSSLMode:     getEnv("DB_SSL_MODE", "disable"),
+		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		Env:           getEnv("ENV", "development"),
+		ServerPort:    getEnv("PORT", "8080"),
 	}
+
+	// Override with DATABASE_URL if provided (Render does this)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		// Parse DATABASE_URL and set individual fields
+		// Or modify DSN() to use DATABASE_URL directly
+		cfg.DBSSLMode = "require" // Render requires SSL
+	}
+
+	return cfg
 }
 
-func (c Config) DSN() string {
+func (c *Config) DSN() string {
+	// Render's PostgreSQL uses DATABASE_URL format
+	// Check if DATABASE_URL is set (Render's managed DB)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		return dbURL
+	}
+
+	// Fallback to individual fields for local development
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSSLMode,
 	)
 }
 
-func (c Config) ServerAddr() string {
-	return ":" + c.Port
+func (c *Config) ServerAddr() string {
+	return ":" + c.ServerPort
 }
 
-func GetEnv(key, fallback string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return fallback
+	return defaultValue
 }
