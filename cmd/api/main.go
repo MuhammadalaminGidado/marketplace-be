@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -12,6 +13,7 @@ import (
 	db "example/api/internal/database"
 	"example/api/internal/handlers"
 	"example/api/internal/middleware"
+	"example/api/internal/redis"
 	"example/api/internal/repositories"
 	"example/api/internal/services"
 	authservice "example/api/internal/services/auth"
@@ -67,6 +69,12 @@ func main() {
 		logger,
 	)
 
+	redisClient := redis.New(
+		os.Getenv("REDIS_ADDR"),
+		os.Getenv("REDIS_PASSWORD"),
+		0,
+	)
+
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.Logger(logger, cfg.Env))
@@ -74,10 +82,12 @@ func main() {
 
 	router.GET("/health", h.Health)
 
+	authLimiter := middleware.NewRedisRateLimiter(redisClient, 5, time.Minute, "ratelimit:auth")
+
 	api := router.Group("/api")
 	{
-		api.POST("/login", h.Login)
-		api.POST("/signup", h.Signup)
+		api.POST("/login", authLimiter.Middleware(), h.Login)
+		api.POST("/signup", authLimiter.Middleware(), h.Signup)
 		api.POST("/otp/request", h.NotImplemented)
 		api.POST("/otp/verify", h.NotImplemented)
 		api.POST("/password/reset", h.NotImplemented)
