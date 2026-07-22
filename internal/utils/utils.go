@@ -1,6 +1,8 @@
 package utils
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+)
 
 type Permission struct {
 	ID   uint `gorm:"primaryKey"`

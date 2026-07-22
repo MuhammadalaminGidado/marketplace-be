@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" RENAME COLUMN "token_digest" TO "token_hash";
