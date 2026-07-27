@@ -17,11 +17,6 @@ func (s *Service) Signup(
 	ctx context.Context,
 	req dto.SignupPayload,
 ) (*models.Entity, string, string, error) {
-
-	if req.Password != req.PasswordConfirmation {
-		return nil, "", "", ErrPasswordMismatch
-	}
-
 	passwordDigest, err := auth.PasswordHash(req.Password)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("hash password: %w", err)
@@ -32,8 +27,14 @@ func (s *Service) Signup(
 		PasswordDigest: passwordDigest,
 	}
 
-	var token string
-	var csrfToken string
+	token, tokenDigest, err := auth.GenerateSessionToken()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("generate session token: %w", err)
+	}
+	csrfToken, err := auth.GenerateCSRFToken()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("generate csrf token: %w", err)
+	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		entityRepo := s.entities.WithDB(tx)
 		sessionRepo := s.sessions.WithDB(tx)
@@ -46,18 +47,6 @@ func (s *Service) Signup(
 
 			return err
 		}
-
-		var tokenDigest string
-		token, tokenDigest, err = auth.GenerateSessionToken()
-		if err != nil {
-			return err
-		}
-
-		csrfToken, err = auth.GenerateCSRFToken()
-		if err != nil {
-			return fmt.Errorf("generate csrf token: %w", err)
-		}
-
 		session := &models.Session{
 			EntityID:    entity.ID,
 			TokenDigest: tokenDigest,

@@ -8,7 +8,6 @@ import (
 
 	"example/api/internal/auth"
 	"example/api/internal/dto"
-	"example/api/internal/utils"
 
 	"example/api/internal/models"
 
@@ -37,7 +36,7 @@ func (s *Service) Login(
 		return nil, "", "", ErrInvalidCredentials
 	}
 
-	if entity.Status != utils.StatusActive {
+	if entity.Status != models.StatusActive {
 		return nil, "", "", ErrInvalidCredentials
 	}
 

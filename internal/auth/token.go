@@ -30,7 +30,7 @@ func HashSessionToken(token string) string {
 func GenerateCSRFToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", fmt.Errorf("generate csrf token: %w", err)
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
 }

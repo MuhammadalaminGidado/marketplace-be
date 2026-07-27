@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"time"
 
 	"example/api/internal/dto"
 	"example/api/internal/models"
@@ -11,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+const maxAge = int(24 * time.Hour / time.Second)
 
 func (h *Handler) GetCurrentUser(c *gin.Context) {
 	value, exists := c.Get("current_entity")
@@ -35,7 +38,7 @@ func (h *Handler) Signup(c *gin.Context) {
 	var req dto.SignupPayload
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		response.ValidationError(c, err)
 		return
 	}
 
@@ -45,9 +48,6 @@ func (h *Handler) Signup(c *gin.Context) {
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, authservice.ErrPasswordMismatch):
-			response.BadRequest(c, err.Error())
-
 		case errors.Is(err, authservice.ErrEmailAlreadyExists):
 			response.Conflict(c, err.Error())
 
@@ -59,14 +59,14 @@ func (h *Handler) Signup(c *gin.Context) {
 		return
 	}
 
-	response.AuthSuccess(c, 201, token, csrfToken, entity)
+	response.AuthSuccess(c, 201, token, csrfToken, maxAge, entity)
 }
 
 func (h *Handler) Login(c *gin.Context) {
 	var req dto.LoginPayload
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		response.ValidationError(c, err)
 		return
 	}
 
@@ -87,7 +87,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	response.AuthSuccess(c, 200, token, csrfToken, entity)
+	response.AuthSuccess(c, 200, token, csrfToken, maxAge, entity)
 }
 
 func (h *Handler) Logout(c *gin.Context) {
@@ -107,6 +107,9 @@ func (h *Handler) Logout(c *gin.Context) {
 		response.InternalServerError(c)
 		return
 	}
+
+	c.SetCookie("session_token", "", -1, "/", "", true, true)
+	c.SetCookie("csrf_token", "", -1, "/", "", true, false)
 
 	response.NoContent(c)
 }

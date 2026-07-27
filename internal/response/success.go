@@ -7,27 +7,17 @@ import (
 
 	"example/api/internal/dto"
 	"example/api/internal/models"
-	"example/api/internal/utils"
 )
 
-func AuthSuccess(
-	c *gin.Context,
-	statusCode int,
-	token string,
-	csrfToken string,
-	entity *models.Entity,
-) {
+func AuthSuccess(c *gin.Context, statusCode int, token, csrfToken string, maxAge int, entity *models.Entity) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_token", token, 86400, "/", "", true, true)
+	c.SetCookie("session_token", token, maxAge, "/", "", true, true)
 
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("csrf_token", csrfToken, 86400, "/", "", true, false)
+	c.SetCookie("csrf_token", csrfToken, maxAge, "/", "", true, false)
 
-	c.JSON(statusCode, dto.AuthResponse{
-		Status: utils.StatusSuccess,
-		Data: dto.AuthUserData{
-			ID:    entity.ID,
-			Email: entity.Email,
-		},
+	c.JSON(statusCode, Envelope{
+		Status: StatusSuccess,
+		Data:   dto.AuthUserData{ID: entity.ID, Email: entity.Email},
 	})
 }

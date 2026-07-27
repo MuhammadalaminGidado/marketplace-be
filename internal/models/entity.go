@@ -6,6 +6,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	StatusActive      = "active"
+	StatusSuspended   = "suspended"
+	StatusDeactivated = "deactivated"
+)
+
 type Entity struct {
 	ID string `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 
