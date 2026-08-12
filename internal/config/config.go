@@ -14,15 +14,12 @@ type Config struct {
 	DBSSLMode      string
 	RedisAddr      string
 	RedisPassword  string
-	SMTPHost       string
-	SMTPPort       string
-	SMTPUsername   string
-	SMTPPassword   string
+	ResendAPIKey   string
 	SMTPFrom       string
 	AppName        string
 	Env            string
 	ServerPort     string
-	MigrationsPath string // Add this for migrations
+	MigrationsPath string
 }
 
 func Load() *Config {
@@ -35,10 +32,7 @@ func Load() *Config {
 		DBSSLMode:      getEnv("DB_SSL_MODE", "disable"),
 		RedisAddr:      getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:  getEnv("REDIS_PASSWORD", ""),
-		SMTPHost:       getEnv("SMTP_HOST", ""),
-		SMTPPort:       getEnv("SMTP_PORT", "587"),
-		SMTPUsername:   getEnv("SMTP_USERNAME", ""),
-		SMTPPassword:   getEnv("SMTP_PASSWORD", ""),
+		ResendAPIKey:   getEnv("RESEND_API_KEY", ""),
 		SMTPFrom:       getEnv("SMTP_FROM", ""),
 		AppName:        getEnv("APP_NAME", "Local Marketplace"),
 		Env:            getEnv("ENV", "development"),

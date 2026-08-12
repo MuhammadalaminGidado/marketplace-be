@@ -1,11 +1,12 @@
 package mailer
 
 import (
+	"bytes"
 	"context"
-	"crypto/tls"
+	"encoding/json"
 	"fmt"
-	"net"
-	"net/smtp"
+	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -15,20 +16,12 @@ import (
 const (
 	defaultAppName = "Local Marketplace"
 	defaultTimeout = 30 * time.Second
+	resendBaseURL  = "https://api.resend.com"
 )
 
 type Mailer interface {
 	Send(ctx context.Context, to, subject, body string) error
 	AppName() string
-}
-
-type Options struct {
-	Host     string
-	Port     string
-	Username string
-	Password string
-	From     string
-	AppName  string
 }
 
 type ConsoleMailer struct {
@@ -55,118 +48,62 @@ func (m *ConsoleMailer) Send(_ context.Context, to, subject, body string) error 
 	return nil
 }
 
-type SMTPMailer struct {
-	host        string
-	port        string
-	from        string
-	auth        smtp.Auth
-	appName     string
-	timeout     time.Duration
-	implicitTLS bool
-	logger      *zap.Logger
+type ResendMailer struct {
+	apiKey string
+	from   string
+	client *http.Client
+	appName string
+	logger *zap.Logger
 }
 
-func (m *SMTPMailer) AppName() string { return m.appName }
+func (m *ResendMailer) AppName() string { return m.appName }
 
-func (m *SMTPMailer) Send(ctx context.Context, to, subject, body string) error {
-	addr := net.JoinHostPort(m.host, m.port)
-
-	msg := fmt.Appendf(nil,
-		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-		m.from, to, subject, body,
-	)
-
-	deadline := time.Now().Add(m.timeout)
-	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
-		deadline = ctxDeadline
+func (m *ResendMailer) Send(ctx context.Context, to, subject, body string) error {
+	payload := map[string]interface{}{
+		"from":    m.from,
+		"to":      []string{to},
+		"subject": subject,
+		"html":    body,
 	}
 
-	if err := sendMail(ctx, addr, m.host, m.from, []string{to}, msg, m.auth, m.implicitTLS, deadline); err != nil {
-		return err
-	}
-
-	m.logger.Info("email sent", zap.String("to", to), zap.String("subject", subject))
-	return nil
-}
-
-func sendMail(
-	ctx context.Context,
-	addr, host, from string,
-	to []string,
-	msg []byte,
-	a smtp.Auth,
-	implicitTLS bool,
-	deadline time.Time,
-) error {
-
-	d := net.Dialer{Timeout: 15 * time.Second}
-	conn, err := d.DialContext(ctx, "tcp", addr)
+	js, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("smtp dial: %w", err)
+		return fmt.Errorf("resend marshal: %w", err)
 	}
 
-	if implicitTLS {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: host})
-		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			conn.Close()
-			return fmt.Errorf("smtp tls handshake: %w", err)
-		}
-		conn = tlsConn
-	}
-
-	if err := conn.SetDeadline(deadline); err != nil {
-		conn.Close()
-		return fmt.Errorf("smtp set deadline: %w", err)
-	}
-
-	c, err := smtp.NewClient(conn, host)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resendBaseURL+"/emails", bytes.NewReader(js))
 	if err != nil {
-		conn.Close()
-		return fmt.Errorf("smtp greeting: %w", err)
+		return fmt.Errorf("resend request: %w", err)
 	}
-	defer c.Close()
+	req.Header.Set("Authorization", "Bearer "+m.apiKey)
+	req.Header.Set("Content-Type", "application/json")
 
-	if err := c.Hello("localhost"); err != nil {
-		return fmt.Errorf("smtp hello: %w", err)
-	}
-
-	if !implicitTLS {
-		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
-				return fmt.Errorf("smtp starttls: %w", err)
-			}
-		}
-	}
-
-	if a != nil {
-		if ok, _ := c.Extension("AUTH"); ok {
-			if err := c.Auth(a); err != nil {
-				return fmt.Errorf("smtp auth: %w", err)
-			}
-		}
-	}
-
-	if err := c.Mail(from); err != nil {
-		return fmt.Errorf("smtp mail: %w", err)
-	}
-	for _, recipient := range to {
-		if err := c.Rcpt(recipient); err != nil {
-			return fmt.Errorf("smtp rcpt: %w", err)
-		}
-	}
-
-	w, err := c.Data()
+	resp, err := m.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("smtp data: %w", err)
+		return fmt.Errorf("resend dial: %w", err)
 	}
-	if _, err := w.Write(msg); err != nil {
-		return fmt.Errorf("smtp data write: %w", err)
-	}
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("smtp data close: %w", err)
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		var res struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(bodyBytes, &res)
+		if res.Error != "" {
+			return fmt.Errorf("resend: %s", res.Error)
+		}
+		return fmt.Errorf("resend: status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	_ = c.Quit()
+	var res struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return fmt.Errorf("resend decode: %w", err)
+	}
+
+	m.logger.Info("email sent", zap.String("to", to), zap.String("subject", subject), zap.String("id", res.ID))
 	return nil
 }
 
@@ -180,59 +117,38 @@ func SendTimeout() time.Duration {
 }
 
 func NewFromEnv(logger *zap.Logger) Mailer {
-	options := Options{
-		Host:     os.Getenv("SMTP_HOST"),
-		Port:     os.Getenv("SMTP_PORT"),
-		Username: os.Getenv("SMTP_USERNAME"),
-		Password: os.Getenv("SMTP_PASSWORD"),
-		From:     os.Getenv("SMTP_FROM"),
-		AppName:  os.Getenv("APP_NAME"),
+	apiKey := os.Getenv("SMTP_PASSWORD")
+	if apiKey == "" {
+		apiKey = os.Getenv("RESEND_API_KEY")
 	}
 
-	if options.From == "" {
+	from := os.Getenv("SMTP_FROM")
+	appName := os.Getenv("APP_NAME")
+
+	if from == "" {
 		logger.Warn("SMTP_FROM not set, providers may reject the sender")
-		options.From = "no-reply@localhost"
+		from = "no-reply@localhost"
 	}
-	if options.AppName == "" {
-		options.AppName = defaultAppName
-	}
-
-	if options.Host == "" {
-		logger.Warn("SMTP_HOST not set, using console email transport")
-		return NewConsoleMailer(logger, options.AppName)
+	if appName == "" {
+		appName = defaultAppName
 	}
 
-	if options.Port == "" {
-		options.Port = "587"
-	}
-
-	implicitTLS := options.Port == "465" || options.Port == "2465" || options.Port == "2587"
-	if os.Getenv("SMTP_IMPLICIT_TLS") == "true" {
-		implicitTLS = true
-	}
-
-	var auth smtp.Auth
-	if options.Username != "" {
-		auth = smtp.PlainAuth("", options.Username, options.Password, options.Host)
+	if apiKey == "" {
+		logger.Warn("RESEND_API_KEY not set, using console email transport")
+		return NewConsoleMailer(logger, appName)
 	}
 
 	logger.Info(
-		"SMTP transport configured",
-		zap.String("host", options.Host),
-		zap.String("port", options.Port),
-		zap.Bool("implicit_tls", implicitTLS),
-		zap.String("from", options.From),
-		zap.Duration("timeout", SendTimeout()),
+		"Resend HTTP transport configured",
+		zap.String("from", from),
+		zap.String("timeout", defaultTimeout.String()),
 	)
 
-	return &SMTPMailer{
-		host:        options.Host,
-		port:        options.Port,
-		from:        options.From,
-		auth:        auth,
-		appName:     options.AppName,
-		timeout:     SendTimeout(),
-		implicitTLS: implicitTLS,
-		logger:      logger,
+	return &ResendMailer{
+		apiKey:  apiKey,
+		from:    from,
+		client:  &http.Client{Timeout: defaultTimeout},
+		appName: appName,
+		logger:  logger,
 	}
 }

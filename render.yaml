@@ -31,17 +31,10 @@ services:
       - key: REDIS_PASSWORD
         sync: false
 
-      # SMTP (OTP email delivery) - falls back to console logging if unset
-      # Resend: username "resend", password = API key; 465 = implicit TLS.
+# Email (Resend HTTP API, port 443) - falls back to console logging if unset
       # onboarding@resend.dev is Resend's test-only shared domain: it can only
       # deliver to the email on the Resend account. Verify a domain to email
       # other recipients.
-      - key: SMTP_HOST
-        value: smtp.resend.com
-      - key: SMTP_PORT
-        value: "2587"
-      - key: SMTP_USERNAME
-        value: resend
       - key: SMTP_PASSWORD
         sync: false # Resend API key (re_...) - set in dashboard
       - key: SMTP_FROM
