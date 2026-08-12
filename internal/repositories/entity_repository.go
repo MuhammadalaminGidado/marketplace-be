@@ -18,6 +18,8 @@ type EntityRepository interface {
 
 	Update(ctx context.Context, entity *models.Entity) error
 	UpdateLastLogin(ctx context.Context, entityID string) error
+	MarkEmailVerified(ctx context.Context, entityID string) error
+	UpdatePasswordDigest(ctx context.Context, entityID, digest string) error
 }
 
 type entityRepository struct {
@@ -102,5 +104,29 @@ func (r *entityRepository) UpdateLastLogin(
 		Model(&models.Entity{}).
 		Where("id = ?", entityID).
 		Update("last_login_at", gorm.Expr("NOW()")).
+		Error
+}
+
+func (r *entityRepository) MarkEmailVerified(
+	ctx context.Context,
+	entityID string,
+) error {
+	return r.db.
+		WithContext(ctx).
+		Model(&models.Entity{}).
+		Where("id = ?", entityID).
+		Update("email_verified_at", gorm.Expr("NOW()")).
+		Error
+}
+
+func (r *entityRepository) UpdatePasswordDigest(
+	ctx context.Context,
+	entityID, digest string,
+) error {
+	return r.db.
+		WithContext(ctx).
+		Model(&models.Entity{}).
+		Where("id = ?", entityID).
+		Update("password_digest", digest).
 		Error
 }

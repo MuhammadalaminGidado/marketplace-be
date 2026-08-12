@@ -18,6 +18,6 @@ func AuthSuccess(c *gin.Context, statusCode int, token, csrfToken string, maxAge
 
 	c.JSON(statusCode, Envelope{
 		Status: StatusSuccess,
-		Data:   dto.AuthUserData{ID: entity.ID, Email: entity.Email},
+		Data:   dto.AuthUserData{ID: entity.ID, Email: entity.Email, EmailVerified: entity.EmailVerifiedAt != nil},
 	})
 }

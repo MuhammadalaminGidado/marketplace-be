@@ -60,5 +60,7 @@ func (s *Service) Signup(
 		return nil, "", "", err
 	}
 
+	s.issueAndSendOTP(ctx, entity, models.OtpPurposeVerifyEmail)
+
 	return entity, token, csrfToken, nil
 }

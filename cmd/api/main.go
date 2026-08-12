@@ -13,6 +13,7 @@ import (
 	"example/api/internal/config"
 	db "example/api/internal/database"
 	"example/api/internal/handlers"
+	"example/api/internal/mailer"
 	"example/api/internal/middleware"
 	"example/api/internal/redis"
 	"example/api/internal/repositories"
@@ -93,12 +94,19 @@ func main() {
 	// Repositories
 	entityRepo := repositories.NewEntityRepository(database)
 	sessionRepo := repositories.NewSessionRepository(database)
+	otpRepo := repositories.NewOTPRepository(database)
+
+	// Mailer - SMTP when configured, console fallback for local dev
+	mailerClient := mailer.NewFromEnv(logger)
 
 	// Services
 	authService := authservice.NewService(
 		database,
 		entityRepo,
 		sessionRepo,
+		otpRepo,
+		mailerClient,
+		redisClient.Client,
 		logger,
 		24*time.Hour,
 		5,
@@ -128,9 +136,9 @@ func main() {
 	{
 		api.POST("/login", authLimiter.Middleware(), h.Login)
 		api.POST("/signup", authLimiter.Middleware(), h.Signup)
-		api.POST("/otp/request", h.NotImplemented)
-		api.POST("/otp/verify", h.NotImplemented)
-		api.POST("/password/reset", h.NotImplemented)
+		api.POST("/otp/request", authLimiter.Middleware(), h.RequestOTP)
+		api.POST("/otp/verify", authLimiter.Middleware(), h.VerifyOTP)
+		api.POST("/password/reset", authLimiter.Middleware(), h.ResetPassword)
 
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(authService), middleware.CSRFMiddleware())

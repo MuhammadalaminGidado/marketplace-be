@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"net/http"
 	"time"
 
 	"example/api/internal/dto"
@@ -112,4 +113,89 @@ func (h *Handler) Logout(c *gin.Context) {
 	c.SetCookie("csrf_token", "", -1, "/", "", true, false)
 
 	response.NoContent(c)
+}
+
+func (h *Handler) RequestOTP(c *gin.Context) {
+	var req dto.OTPRequestPayload
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, err)
+		return
+	}
+
+	if err := h.services.Auth.RequestOTP(
+		c.Request.Context(),
+		req.Email,
+		req.Purpose,
+	); err != nil {
+		switch {
+		case errors.Is(err, authservice.ErrOtpThrottled):
+			response.Error(c, http.StatusTooManyRequests, err.Error())
+
+		default:
+			h.logger.Error("request otp", zap.Error(err))
+			response.InternalServerError(c)
+		}
+
+		return
+	}
+
+	response.OK(c, dto.OTPRequestData{Message: "code sent if the email is valid"})
+}
+
+func (h *Handler) VerifyOTP(c *gin.Context) {
+	var req dto.OTPVerifyPayload
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, err)
+		return
+	}
+
+	if err := h.services.Auth.VerifyEmail(
+		c.Request.Context(),
+		req.Email,
+		req.Code,
+	); err != nil {
+		switch {
+		case errors.Is(err, authservice.ErrInvalidOrExpiredCode):
+			response.Unauthorized(c, err.Error())
+
+		default:
+			h.logger.Error("verify otp", zap.Error(err))
+			response.InternalServerError(c)
+		}
+
+		return
+	}
+
+	response.OK(c, dto.OTPVerifyData{EmailVerified: true})
+}
+
+func (h *Handler) ResetPassword(c *gin.Context) {
+	var req dto.PasswordResetPayload
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ValidationError(c, err)
+		return
+	}
+
+	if err := h.services.Auth.ResetPassword(
+		c.Request.Context(),
+		req.Email,
+		req.Code,
+		req.NewPassword,
+	); err != nil {
+		switch {
+		case errors.Is(err, authservice.ErrInvalidOrExpiredCode):
+			response.Unauthorized(c, err.Error())
+
+		default:
+			h.logger.Error("reset password", zap.Error(err))
+			response.InternalServerError(c)
+		}
+
+		return
+	}
+
+	response.OK(c, dto.PasswordResetData{Message: "password updated"})
 }

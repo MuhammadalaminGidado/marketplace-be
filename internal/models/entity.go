@@ -19,6 +19,8 @@ type Entity struct {
 
 	PasswordDigest string `gorm:"not null"`
 
+	EmailVerifiedAt *time.Time
+
 	Status string `gorm:"type:entity_status;default:'active';not null"`
 
 	Sessions []Session `gorm:"foreignKey:EntityID"`
