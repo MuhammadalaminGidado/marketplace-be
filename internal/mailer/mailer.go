@@ -206,7 +206,7 @@ func NewFromEnv(logger *zap.Logger) Mailer {
 		options.Port = "587"
 	}
 
-	implicitTLS := options.Port == "465" || options.Port == "2465"
+	implicitTLS := options.Port == "465" || options.Port == "2465" || options.Port == "2587"
 	if os.Getenv("SMTP_IMPLICIT_TLS") == "true" {
 		implicitTLS = true
 	}
