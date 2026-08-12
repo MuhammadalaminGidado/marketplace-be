@@ -7,11 +7,15 @@ import (
 	"net"
 	"net/smtp"
 	"os"
+	"time"
 
 	"go.uber.org/zap"
 )
 
-const defaultAppName = "Local Marketplace"
+const (
+	defaultAppName = "Local Marketplace"
+	defaultTimeout = 30 * time.Second
+)
 
 type Mailer interface {
 	Send(ctx context.Context, to, subject, body string) error
@@ -52,12 +56,14 @@ func (m *ConsoleMailer) Send(_ context.Context, to, subject, body string) error 
 }
 
 type SMTPMailer struct {
-	host    string
-	port    string
-	from    string
-	auth    smtp.Auth
-	appName string
-	logger  *zap.Logger
+	host        string
+	port        string
+	from        string
+	auth        smtp.Auth
+	appName     string
+	timeout     time.Duration
+	implicitTLS bool
+	logger      *zap.Logger
 }
 
 func (m *SMTPMailer) AppName() string { return m.appName }
@@ -70,65 +76,107 @@ func (m *SMTPMailer) Send(ctx context.Context, to, subject, body string) error {
 		m.from, to, subject, body,
 	)
 
-	done := make(chan error, 1)
-	go func() {
-		done <- sendMail(ctx, m.host, addr, m.auth, m.from, []string{to}, msg)
-	}()
-
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
+	deadline := time.Now().Add(m.timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
 	}
+
+	if err := sendMail(ctx, addr, m.host, m.from, []string{to}, msg, m.auth, m.implicitTLS, deadline); err != nil {
+		return err
+	}
+
+	m.logger.Info("email sent", zap.String("to", to), zap.String("subject", subject))
+	return nil
 }
 
-func sendMail(_ context.Context, host, addr string, a smtp.Auth, from string, to []string, msg []byte) error {
-	c, err := smtp.Dial(addr)
+func sendMail(
+	ctx context.Context,
+	addr, host, from string,
+	to []string,
+	msg []byte,
+	a smtp.Auth,
+	implicitTLS bool,
+	deadline time.Time,
+) error {
+
+	d := net.Dialer{Timeout: 15 * time.Second}
+	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("smtp dial: %w", err)
+	}
+
+	if implicitTLS {
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: host})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			conn.Close()
+			return fmt.Errorf("smtp tls handshake: %w", err)
+		}
+		conn = tlsConn
+	}
+
+	if err := conn.SetDeadline(deadline); err != nil {
+		conn.Close()
+		return fmt.Errorf("smtp set deadline: %w", err)
+	}
+
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("smtp greeting: %w", err)
 	}
 	defer c.Close()
 
-	if err = c.Hello("localhost"); err != nil {
-		return err
+	if err := c.Hello("localhost"); err != nil {
+		return fmt.Errorf("smtp hello: %w", err)
 	}
 
-	if ok, _ := c.Extension("STARTTLS"); ok {
-		if err = c.StartTLS(&tls.Config{ServerName: host}); err != nil {
-			return err
+	if !implicitTLS {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+				return fmt.Errorf("smtp starttls: %w", err)
+			}
 		}
 	}
 
 	if a != nil {
 		if ok, _ := c.Extension("AUTH"); ok {
-			if err = c.Auth(a); err != nil {
-				return err
+			if err := c.Auth(a); err != nil {
+				return fmt.Errorf("smtp auth: %w", err)
 			}
 		}
 	}
 
-	if err = c.Mail(from); err != nil {
-		return err
+	if err := c.Mail(from); err != nil {
+		return fmt.Errorf("smtp mail: %w", err)
 	}
-	for _, addr := range to {
-		if err = c.Rcpt(addr); err != nil {
-			return err
+	for _, recipient := range to {
+		if err := c.Rcpt(recipient); err != nil {
+			return fmt.Errorf("smtp rcpt: %w", err)
 		}
 	}
 
 	w, err := c.Data()
 	if err != nil {
-		return err
+		return fmt.Errorf("smtp data: %w", err)
 	}
-	if _, err = w.Write(msg); err != nil {
-		return err
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("smtp data write: %w", err)
 	}
-	if err = w.Close(); err != nil {
-		return err
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp data close: %w", err)
 	}
 
-	return c.Quit()
+	_ = c.Quit()
+	return nil
+}
+
+func SendTimeout() time.Duration {
+	if raw := os.Getenv("SMTP_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return defaultTimeout
 }
 
 func NewFromEnv(logger *zap.Logger) Mailer {
@@ -142,7 +190,8 @@ func NewFromEnv(logger *zap.Logger) Mailer {
 	}
 
 	if options.From == "" {
-		options.From = "onboarding@resend.dev"
+		logger.Warn("SMTP_FROM not set, providers may reject the sender")
+		options.From = "no-reply@localhost"
 	}
 	if options.AppName == "" {
 		options.AppName = defaultAppName
@@ -157,17 +206,33 @@ func NewFromEnv(logger *zap.Logger) Mailer {
 		options.Port = "587"
 	}
 
+	implicitTLS := options.Port == "465"
+	if os.Getenv("SMTP_IMPLICIT_TLS") == "true" {
+		implicitTLS = true
+	}
+
 	var auth smtp.Auth
 	if options.Username != "" {
 		auth = smtp.PlainAuth("", options.Username, options.Password, options.Host)
 	}
 
+	logger.Info(
+		"SMTP transport configured",
+		zap.String("host", options.Host),
+		zap.String("port", options.Port),
+		zap.Bool("implicit_tls", implicitTLS),
+		zap.String("from", options.From),
+		zap.Duration("timeout", SendTimeout()),
+	)
+
 	return &SMTPMailer{
-		host:    options.Host,
-		port:    options.Port,
-		from:    options.From,
-		auth:    auth,
-		appName: options.AppName,
-		logger:  logger,
+		host:        options.Host,
+		port:        options.Port,
+		from:        options.From,
+		auth:        auth,
+		appName:     options.AppName,
+		timeout:     SendTimeout(),
+		implicitTLS: implicitTLS,
+		logger:      logger,
 	}
 }

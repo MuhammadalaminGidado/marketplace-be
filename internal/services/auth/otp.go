@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"example/api/internal/auth"
+	"example/api/internal/mailer"
 	"example/api/internal/models"
 
 	"go.uber.org/zap"
@@ -71,7 +72,7 @@ func (s *Service) issueAndSendOTP(
 	)
 
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		bgCtx, cancel := context.WithTimeout(context.Background(), mailer.SendTimeout()+15*time.Second)
 		defer cancel()
 		if err := s.mailer.Send(bgCtx, entity.Email, subject, body); err != nil {
 			s.logger.Error("send otp email", zap.String("to", entity.Email), zap.Error(err))
