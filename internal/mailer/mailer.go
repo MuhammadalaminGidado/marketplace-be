@@ -142,7 +142,7 @@ func NewFromEnv(logger *zap.Logger) Mailer {
 	}
 
 	if options.From == "" {
-		options.From = "no-reply@localhost"
+		options.From = "onboarding@resend.dev"
 	}
 	if options.AppName == "" {
 		options.AppName = defaultAppName
