@@ -39,7 +39,7 @@ services:
       - key: SMTP_HOST
         value: smtp.resend.com
       - key: SMTP_PORT
-        value: "465"
+        value: "2465"
       - key: SMTP_USERNAME
         value: resend
       - key: SMTP_PASSWORD
